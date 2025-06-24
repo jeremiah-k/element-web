@@ -921,7 +921,20 @@ export const UserInfoHeader: React.FC<{
 
             if (isValidTimestamp && lastActiveAgo >= 0) {
                 const timeSincePresenceUpdate = now - lastPresenceTs;
-                presenceLastActiveAgo = lastActiveAgo + timeSincePresenceUpdate;
+
+                // Only apply dynamic calculation if the presence was updated recently
+                // If someone has been offline for a long time (e.g., days), the server
+                // sends the correct lastActiveAgo and we shouldn't override it with our calculation
+                // We use a threshold of 1 hour - if presence was updated more than 1 hour ago,
+                // trust the server's lastActiveAgo value
+                const oneHourMs = 60 * 60 * 1000;
+                if (timeSincePresenceUpdate < oneHourMs) {
+                    presenceLastActiveAgo = lastActiveAgo + timeSincePresenceUpdate;
+                } else {
+                    // For older presence updates, use the original server value
+                    // This preserves long offline periods like "5d" that the server calculated
+                    presenceLastActiveAgo = lastActiveAgo;
+                }
             } else {
                 // Fallback to original value if timestamps are invalid
                 presenceLastActiveAgo = lastActiveAgo >= 0 ? lastActiveAgo : undefined;
