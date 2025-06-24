@@ -904,8 +904,47 @@ export const UserInfoHeader: React.FC<{
     let presenceCurrentlyActive: boolean | undefined;
     if (member instanceof RoomMember && member.user) {
         presenceState = member.user.presence;
-        presenceLastActiveAgo = member.user.lastActiveAgo;
         presenceCurrentlyActive = member.user.currentlyActive;
+
+        // Calculate dynamic activeAgo based on when presence was last updated
+        // The Matrix protocol sends last_active_ago at the time of the presence event,
+        // but we need to add the time elapsed since that event was received
+        if (member.user.lastActiveAgo !== undefined && member.user.lastPresenceTs !== undefined) {
+            // Ensure both values are valid numbers and lastPresenceTs is reasonable
+            const now = Date.now();
+            const lastPresenceTs = member.user.lastPresenceTs;
+            const lastActiveAgo = member.user.lastActiveAgo;
+
+            // Validate that lastPresenceTs is a reasonable timestamp (not too far in past/future)
+            const oneYearMs = 365 * 24 * 60 * 60 * 1000; // 1 year in milliseconds
+            const isValidTimestamp = lastPresenceTs > (now - oneYearMs) && lastPresenceTs <= now;
+
+            if (isValidTimestamp && lastActiveAgo >= 0) {
+                const timeSincePresenceUpdate = now - lastPresenceTs;
+
+                // Only apply dynamic calculation if the presence was updated recently
+                // If someone has been offline for a long time (e.g., days), the server
+                // sends the correct lastActiveAgo and we shouldn't override it with our calculation
+                // We use a threshold of 1 hour - if presence was updated more than 1 hour ago,
+                // trust the server's lastActiveAgo value
+                const oneHourMs = 60 * 60 * 1000;
+                if (timeSincePresenceUpdate < oneHourMs) {
+                    presenceLastActiveAgo = lastActiveAgo + timeSincePresenceUpdate;
+                } else {
+                    // For older presence updates, use the original server value
+                    // This preserves long offline periods like "5d" that the server calculated
+                    presenceLastActiveAgo = lastActiveAgo;
+                }
+            } else {
+                // Fallback to original value if timestamps are invalid
+                presenceLastActiveAgo = lastActiveAgo >= 0 ? lastActiveAgo : undefined;
+            }
+        } else {
+            // Use original value if either timestamp is missing, but validate it's reasonable
+            presenceLastActiveAgo = (member.user.lastActiveAgo !== undefined && member.user.lastActiveAgo >= 0)
+                ? member.user.lastActiveAgo
+                : undefined;
+        }
     }
 
     const enablePresenceByHsUrl = SdkConfig.get("enable_presence_by_hs_url");
